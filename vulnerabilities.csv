@@ -1,0 +1,31 @@
+date_detected,sonarqube_sast,burp_dast,zap_dast
+2021-05-15,"Cross-Domain JavaScript Source File InclusionCross-Domain JavaScript Source File Inclusion
+",cookies present without secure flag,"22234:SQL injection may be possible
+"
+2021-05-15,,http parameter override,"22622623: A cookie has been set without the secure flag, which means that the cookie can be accessed via unencrypted connections.
+
+"
+2021-05-15,"sql injection The software constructs all or part of an SQL command using externally-influenced input from an upstream component, but it does not neutralize or incorrectly neutralizes special elements that could modify the intended SQL command when it is sent to a downstream component. a
+",cookies present without secure flag,"33223: A private IP (such as 10.x.x.x, 172.x.x.x, 192.168.x.x) or an Amazon EC2 private hostname (for example, ip-10-0-56-78) has been found in the HTTP response body. This information might be helpful for further attacks targeting internal systems.
+
+"
+2021-05-21,,private IP,"22234:SQL injection may be possible
+"
+2021-05-15,"HTTP Parameter Override : includes one or more script files from a third-party domain.
+
+",,
+2021-04-01,"Cross-Domain JavaScript Source File InclusionCross-Domain JavaScript Source File Inclusion
+",cookies present without secure flag,"22622623: A cookie has been set without the secure flag, which means that the cookie can be accessed via unencrypted connections.
+
+"
+2021-04-01,"HTTP Parameter Override : includes one or more script files from a third-party domain.
+
+",private IP,"33223: A private IP (such as 10.x.x.x, 172.x.x.x, 192.168.x.x) or an Amazon EC2 private hostname (for example, ip-10-0-56-78) has been found in the HTTP response body. This information might be helpful for further attacks targeting internal systems.
+
+"
+2021-04-01,"Cross-Domain JavaScript Source File InclusionCross-Domain JavaScript Source File Inclusion
+",,
+2021-01-15,"Cross-Domain JavaScript Source File InclusionCross-Domain JavaScript Source File Inclusion
+",private IP,"33223: A private IP (such as 10.x.x.x, 172.x.x.x, 192.168.x.x) or an Amazon EC2 private hostname (for example, ip-10-0-56-78) has been found in the HTTP response body. This information might be helpful for further attacks targeting internal systems.
+
+"
