@@ -1,206 +1,226 @@
+
 import streamlit as st
-import pandas as  pd
+import pandas as pd
+import numpy as np
 from st_aggrid import AgGrid
-from st_aggrid.grid_options_builder import GridOptionsBuilder
-import re
-st.set_page_config(layout="wide")
+import math
+from pyomo.environ import *
+from pyomo.opt import SolverFactory
 
 
+#st.set_page_config(layout="wide")
 
-##### loading data 
+url = """https://docs.google.com/spreadsheets/d/1gd_SJn1AMJFXrfwIWglTfkImdNySX32zWGB0DYW4q4A/gviz/tq?tqx=out:csv&sheet=student_details"""
+df = pd.read_csv(url).drop_duplicates(keep = 'first')
+
+st.header('World Wide Learning')
+
+st.subheader('Student Details')
+AgGrid(df)
 
 @st.cache
-def fetch_and_clean_data():
-    df =  pd.read_csv('vulnerabilities.csv')
-    df.date_detected = pd.to_datetime(df['date_detected']).dt.date
-    date_lst = list(df.date_detected.unique())
-    date_lst.sort(reverse=True)
-
-    return df, date_lst
-
-df, date_lst = fetch_and_clean_data()
+def convert_df(df):
+    return df.to_csv().encode('utf-8')
 
 
-st.title("Security Dashboard")
-analysis_dt = st.selectbox('Select Analysis Date', date_lst)
+#############################################################################################
 
-error_cat = ['sql injection','cookies present without secure flag','private ip in html', 'http parameter override', 'cross domain javascript source file present']
+def get_weekday_availability(utc_plus_time):
+    availability = []
+    end = -utc_plus_time + 21 
+    availability = list(range(math.ceil(-utc_plus_time + 16), math.floor(end+ 1 ) )   )
+    if -utc_plus_time + 21 > 23:
+        end = -utc_plus_time + 21 - 23
+        availability = list(range(math.ceil(-utc_plus_time + 16),23)   ) + list(range(math.floor(end)  )   )
+    return availability
 
-def detect_type(bug):
-    bug = ' '.join(re.sub(r'[^a-z ]', ' ',  bug.lower()).split())
-    match_flg = [len(list(set(i.split()).intersection(bug.split()))) for i in error_cat]
-    if max(match_flg) > 0:
-        bug_type = error_cat[match_flg.index(max(match_flg))]
-    else:   
-        match_cnt = [len(list(set(i.split()).intersection(bug.split())))  for i in error_cat]
-        bug_type = error_cat[match_cnt.index(max(match_flg))]
-    return bug_type
-
-
-df = pd.melt(df,id_vars=['date_detected'],var_name=['source'], value_name='vulnerability').dropna()
-df['vulnerability_type']= df['vulnerability'].apply(lambda x: detect_type(x))
-
-#df1 = df.groupby('source')['vulnerability'].apply(list).reset_index(name='similar_describtion')
-#df['date_detected'] = df['date_detected'].apply(lambda x: x.strftime("%Y-%mm-%dd, %H:%M:%S") )
+def get_weekend_availability(utc_plus_time):
+    availability = []
+    end = -utc_plus_time + 21 
+    availability = list(range(math.ceil(-utc_plus_time + 9), math.floor(end+ 1 ) )   )
+    if -utc_plus_time + 21 > 23:
+        end = -utc_plus_time + 21 - 23
+        availability = list(range(math.ceil(-utc_plus_time + 16),23)   ) + list(range(math.floor(end)  )   )
+    return availability
 
 
-df1 = df.groupby(['vulnerability_type'], as_index=False)['vulnerability','date_detected','source'].agg(lambda x: list(set(x)))
-
-a =df1[df1.vulnerability_type.isin(df[df.date_detected == analysis_dt]['vulnerability_type'])]
-a['is_new'] = a.date_detected.apply(lambda x: len(x)<2 or min(x) == analysis_dt)
-
-#print(('\n').join(['a','b','c']))
-
-a['date_detected'] = a['date_detected'].apply(lambda x: (""";          \n""").join(j.strftime("%Y-%m-%d") for j in x ))
-a['vulnerability'] = a['vulnerability'].apply(lambda x: (";          \n").join(j for j in x ))
-a['source'] = a['source'].apply(lambda x: (";          \n").join(j for j in x ))
+####################################################################################################################
 
 
-a.columns = ['Vulnerability', 'Possible Descriptions', 'Observation Dates', 'Sources', 'Is New']
-a = a[['Vulnerability',  'Sources', 'Is New', 'Observation Dates','Possible Descriptions']]
-#a['date_detected'] = (', \n').join(['aaa','bbbbb','cbbbb'])
-#bug = 'Cross-Domain JavaScript Source File Inclusion Cross-Domain JavaScript Source File Inclusion '
+#stdt_lst =  [11009, 11142, 11019, 11021, 11022, 11156, 11029, 11033, 11176, 11049, 11178, 11052, 11186, 11059, 11187, 11062, 11065, 11194, 11196, 11204, 11083, 11091, 11095, 11104, 11111, 11121, 11123, 11001, 11003]
 
 
-#analysis_dt
+df1 = df.groupby(['module','english_lvl'], as_index=False)['student_id'].agg(lambda x: list(set(x)))
+
+
+
+
+
+
+def get_weekday_schedule(module , english_lvl, stdt_lst):
+    temp = df[df.student_id.isin(stdt_lst)][['student_id','utc_plus_time']].drop_duplicates(keep = 'first')
+    temp['weekday_slots'] = temp['utc_plus_time'].apply(get_weekday_availability)
+    student_slot_dict = pd.Series(temp.weekday_slots.values,index=[ 'student_' + str(i) for i in temp.student_id]).to_dict()
+    temp = temp.drop(['utc_plus_time'], axis = 1).reset_index(drop = True)
+
+    model = ConcreteModel()
+    slot_utc = {}
     
-#temp = df[df.date_detected == analysis_dt].sort_values(by=['date_detected'])
+    max_grp_per_time = math.floor(len(stdt_lst)/6)
+    for i in range(24*max_grp_per_time):
+        slot_utc['slot_'+str(i)] = 'utc_'+str(math.floor(i/max_grp_per_time))
     
-#temp = df[df.date_detected == analysis_dt].sort_values(by=['date_detected']).drop_duplicates(subset=['vulnerability_type','source'], keep = 'first').loc[:, [ 'source', 'vulnerability', 'vulnerability_type']].reset_index().drop('index', axis = 1)
-#st.dataframe(a)
-#st.table(a)
+    students = ['student_' + str(i) for i in list(temp.student_id)]  # 10 workers available, more than needed
+    model.slot_required = Var(  list(slot_utc.keys()), domain=Binary, initialize=0)
+    model.works = Var(((student, slot) for student in students for slot in list(slot_utc.keys())  ),
+                      within=Binary, initialize=0)
 
-AgGrid(a)
-
-
-
-
-
-# option = st.selectbox(
-# ...     'How would you like to be contacted?',
-# ...     ('Email', 'Home phone', 'Mobile phone'))
-
-
-# st.session_state.clb_nbr = st.selectbox('Select Club Number', list(df.club_nbr.unique()))
-# st.session_state.wght= st.slider("Enter Sales Contribution (Membership Contribution = 100 - Sales Contribution)",value = 88, min_value=0, max_value=100)
-# st.session_state.capacity = int(df_capacity[df_capacity.club_nbr == st.session_state.clb_nbr].total_pal.iloc[0])
-
-# st.session_state.df = df.query("club_nbr == @st.session_state.clb_nbr").loc[:,['category_nbr', 'n_pal' , 'se_member', 'se_sales']].copy()
-# st.session_state.df = pd.melt(st.session_state.df, id_vars=['category_nbr','n_pal'], value_vars=['se_member', 'se_sales'], var_name='measure_name', value_name='measure').copy()
-# df_cat_temp = df_cat.query("club_nbr == @st.session_state.clb_nbr").loc[:,['category_nbr', 'n_palamax' , 'n_palamin']].copy()
-
-# #st.session_state. 
-# #st.session_state.
-# #######################################################
-# #df_cat_temp = df_cat[df_cat.club_nbr == clb_nbr]
-# #st.session_state.flag = False
-
-
-# def optimize():
-#     # if 'df_cat' in st.session_state:
-#     #     st.dataframe(st.session_state.df_cat)
-#     fract_dict = {'se_member': 0.5106788995796772, 'se_sales': 0.48932110042032284}
-#     weight = {'se_sales':st.session_state.wght, 'se_member':(100 -st.session_state.wght)}
+    model.obj = Objective(expr = sum(model.slot_required[i] for i in list(slot_utc.keys())), sense=minimize)
+    model.constraints = ConstraintList()  
     
-#     input_df_temp = (st.session_state.df
-#                      .assign(measure=st.session_state.df[['measure','measure_name']].groupby('measure_name').transform(lambda x: x / x.sum())
-#                                                                          .loc[:,'measure']  * (st.session_state.df.measure_name.map(weight))   *  (st.session_state.df.measure_name.map(fract_dict)) ) 
-#                      .drop('measure_name', 1)
-#                     ).copy()
-
-#     #summing up measures per category per club
-#     input_df_temp = (input_df_temp.groupby(['category_nbr', 'n_pal'], as_index=False)[["measure"]].sum()).copy()
-
-#     #display(input_df_temp)
-
-#     mat = (input_df_temp.assign(ind=1)
-#                .pivot(columns = 'category_nbr', values = 'ind')
-#                .rename_axis(None, axis = 'columns')
-#                .transpose()
-#                .fillna(0)
-#                .to_numpy()
-#                )  
-#     nrow = input_df_temp.shape[0]
-
-
-
-
-
-#     model = pyo.ConcreteModel()
-#     model.x = pyo.Var(range(nrow), domain= pyo.Binary)
-
-#     model.constraints = pyo.ConstraintList()
-#     for arow in mat:
-#       model.constraints.add( pyo.summation(arow , model.x) == 1)
-#     model.constraints.add(  pyo.summation(list(input_df_temp['n_pal']) , model.x) <= st.session_state.capacity)
-#     model.obj_sales = pyo.Objective(expr =  pyo.summation(list(input_df_temp['measure']), model.x), sense = pyo.maximize) 
-#     results =  SolverFactory('glpk').solve(model)
-
-#     solution = [model.x[j].value for j in range(nrow)]
-#     df_sol = (input_df_temp.loc[:, ['category_nbr', 'n_pal']]
-#                              .assign(solution = solution)
-#                              .query('solution == 1')
-#                              .drop(columns = 'solution')
-#                              .rename(columns = {'n_pal': 'n_pal_opt'})
-#                    )
+    for slot in list(slot_utc.keys()):
+        model.constraints.add(sum(model.works[student, slot] for student in students ) <=6)
     
-#     #df_sol.index = [""] * len(df_sol)
-#     gb = GridOptionsBuilder.from_dataframe(df_sol)
+    for slot in list(slot_utc.keys()):
+        for student in students:
+            model.constraints.add( model.works[student, slot] <= model.slot_required[slot]  )
     
-#     AgGrid(df_sol)
-
-#     #st.dataframe(df_sol)
-
-
-
-
-
-
-# def foo():
-#     if st.button('Edit Constraints'):
-#         st.session_state.flag = True
-#         edit_constraints()
-#     if st.button('Optimize'):
-#          optimize()
-
-
+    for student in students:
+        model.constraints.add(sum(model.works[student, slot] for slot in list(slot_utc.keys())  ) == 1)
+        ava_slot = student_slot_dict[student]
+        ava_slot = ['utc_'+str(i) for i in ava_slot]
+        slot_lst = [i for i in list(slot_utc.keys()) if slot_utc[i] not in ava_slot]
+        for slot in slot_lst:
+            model.constraints.add(model.works[student, slot] == 0)
+            
+    results =  SolverFactory('cbc').solve(model)
+    students_slot = [model.works[student, slot].value for student in students for slot in list(slot_utc.keys()) ]
     
-# def edit_constraints():
-#     if st.button('Review Optimization'):
-#         del st.session_state['flag']
-#         foo()
-#         return 0
+    weekday_student_slot_allocation = {}
+    for slot in list(slot_utc.keys()):
+        weekday_student_slot_allocation[slot] = []
+    
+    
+    for student in students:
+        weekday_student_slot_allocation[slot] = []
+        for slot in list(slot_utc.keys()):
+            if model.works[student, slot].value == 1:
+                weekday_student_slot_allocation[slot].append(student)
+    
+    for i in list(weekday_student_slot_allocation.keys()):
+        if len(weekday_student_slot_allocation[i]) == 0:
+            del weekday_student_slot_allocation[i]
+            
+    
+    weekday_schedule_temp = pd.DataFrame(weekday_student_slot_allocation.items(),  columns=['slot', 'student_id'] )        
+    weekday_schedule_temp['time_in_utc'] = weekday_schedule_temp.slot.apply(lambda x: slot_utc[x])
+    weekday_schedule_temp = weekday_schedule_temp.drop(['slot'], axis = 1).reset_index(drop = True)
+    weekday_schedule_temp['english_lvl'] = english_lvl
+    weekday_schedule_temp['module'] = module
+    return weekday_schedule_temp
 
-#     st.subheader('Capacity')
-#     st.session_state.capacity = st.slider("Capacity ", min_value=1000, max_value=2000, value=st.session_state.capacity  )
+
+weekday_schedule = pd.DataFrame(columns = ['student_id', 'time_in_utc', 'english_lvl','module' ])
+
+if st.button('Get the weekday schedule'):
+
+    for i in range(df1.shape[0]):
+        weekday_schedule = pd.concat([weekday_schedule, get_weekday_schedule(df1.iloc[i,0], df1.iloc[i,1], df1.iloc[i,2])  ])
+    st.header('')
+
+    st.subheader('Weekday Schedule')
+    AgGrid(weekday_schedule)
+    
+    csv = convert_df(weekday_schedule)
+    st.download_button(
+        label="Download data as CSV",
+        data=csv,
+        file_name='weekday_schedule.csv',
+        mime='text/csv')
 
 
 
-
-#     lst = []
-#     st.subheader('Mimimum/Maximum pallet count for each category')
-
-#     for i in list(df_cat_temp.category_nbr.unique()):
-#         c, d = st.slider("Category "+str(i),value = [int(df_cat_temp.query(" category_nbr == {}".format(int(i))).n_palamin.iloc[0]),int(df_cat_temp.query(" category_nbr == {}".format(int(i))).n_palamax.iloc[0])])
-#         lst.append([i,c,d])    
-#     st.session_state.df_cat = pd.DataFrame(lst, columns =['Category', 'n_pal_min', 'n_pal_max'])
+########################################################################################################################
 
 
 
+def get_weekend_schedule(module , english_lvl, stdt_lst):
+    temp = df[df.student_id.isin(stdt_lst)][['student_id','utc_plus_time']].drop_duplicates(keep = 'first')
+    temp['weekend_slots'] = temp['utc_plus_time'].apply(get_weekend_availability)
+    student_slot_dict = pd.Series(temp.weekend_slots.values,index=[ 'student_' + str(i) for i in temp.student_id]).to_dict()
+    temp = temp.drop(['utc_plus_time'], axis = 1).reset_index(drop = True)
+
+    model = ConcreteModel()
+    slot_utc = {}
+    
+    max_grp_per_time = math.floor(len(stdt_lst)/6)
+    for i in range(24*max_grp_per_time):
+        slot_utc['slot_'+str(i)] = 'utc_'+str(math.floor(i/max_grp_per_time))
+    
+    students = ['student_' + str(i) for i in list(temp.student_id)]  # 10 workers available, more than needed
+    model.slot_required = Var(  list(slot_utc.keys()), domain=Binary, initialize=0)
+    model.works = Var(((student, slot) for student in students for slot in list(slot_utc.keys())  ),
+                      within=Binary, initialize=0)
+
+    model.obj = Objective(expr = sum(model.slot_required[i] for i in list(slot_utc.keys())), sense=minimize)
+    model.constraints = ConstraintList()  
+    
+    for slot in list(slot_utc.keys()):
+        model.constraints.add(sum(model.works[student, slot] for student in students ) <=6)
+    
+    for slot in list(slot_utc.keys()):
+        for student in students:
+            model.constraints.add( model.works[student, slot] <= model.slot_required[slot]  )
+    
+    for student in students:
+        model.constraints.add(sum(model.works[student, slot] for slot in list(slot_utc.keys())  ) == 1)
+        ava_slot = student_slot_dict[student]
+        ava_slot = ['utc_'+str(i) for i in ava_slot]
+        slot_lst = [i for i in list(slot_utc.keys()) if slot_utc[i] not in ava_slot]
+        for slot in slot_lst:
+            model.constraints.add(model.works[student, slot] == 0)
+            
+    results =  SolverFactory('cbc').solve(model)
+    students_slot = [model.works[student, slot].value for student in students for slot in list(slot_utc.keys()) ]
+    
+    weekend_student_slot_allocation = {}
+    for slot in list(slot_utc.keys()):
+        weekend_student_slot_allocation[slot] = []
+    
+    
+    for student in students:
+        weekend_student_slot_allocation[slot] = []
+        for slot in list(slot_utc.keys()):
+            if model.works[student, slot].value == 1:
+                weekend_student_slot_allocation[slot].append(student)
+    
+    for i in list(weekend_student_slot_allocation.keys()):
+        if len(weekend_student_slot_allocation[i]) == 0:
+            del weekend_student_slot_allocation[i]
+            
+    
+    weekend_schedule_temp = pd.DataFrame(weekend_student_slot_allocation.items(),  columns=['slot', 'student_id'] )        
+    weekend_schedule_temp['time_in_utc'] = weekend_schedule_temp.slot.apply(lambda x: slot_utc[x])
+    weekend_schedule_temp = weekend_schedule_temp.drop(['slot'], axis = 1).reset_index(drop = True)
+    weekend_schedule_temp['english_lvl'] = english_lvl
+    weekend_schedule_temp['module'] = module
+    return weekend_schedule_temp
 
 
-# # PAGES = {
-# #     "App1": foo,
-# #     "Edit Constrains": edit_constraints
-# # }
+weekend_schedule = pd.DataFrame(columns = ['student_id', 'time_in_utc', 'english_lvl','module' ])
 
-# #st.sidebar.title('Navigation')
+if st.button('Get the weekend schedule'):
+    for i in range(df1.shape[0]):
+        weekend_schedule = pd.concat([weekend_schedule, get_weekend_schedule(df1.iloc[i,0], df1.iloc[i,1], df1.iloc[i,2])  ])
 
-# #selection = st.sidebar.radio("Go to", list(PAGES.keys()))
-# # page = PAGES[selection]
+    st.header('')
+    st.subheader('Weekend Schedule')
+    AgGrid(weekend_schedule)
+    
+    csv = convert_df(weekend_schedule)
+    st.download_button(
+        label="Download data as CSV",
+        data=csv,
+        file_name='weekend_schedule.csv',
+        mime='text/csv')
 
-# # page()
-# if 'flag' not in st.session_state:
-#     foo()
-# else:
-#     edit_constraints()
