@@ -1,4 +1,3 @@
-apt-get install -y -qq coinor-cbc
 mkdir -p ~/.streamlit/
 echo "\
 [server]\n\
